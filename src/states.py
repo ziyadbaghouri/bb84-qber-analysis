@@ -1,33 +1,51 @@
-from __future__ import annotations
 from dataclasses import dataclass
-from qutip import basis, ket2dm, qeye
+from qutip import basis, ket2dm, qeye, Qobj
+
+# Basis identifiers
+RECTILINEAR = 0   # '+' basis
+DIAGONAL    = 1   # 'x' basis
+
 
 @dataclass(frozen=True)
 class BB84States:
-    # kets
+    """
+    Collection of BB84 quantum states and measurement operators.
+
+    Basis convention:
+      - RECTILINEAR (0): |0>, |1>
+      - DIAGONAL    (1): (|0> ± |1>) / sqrt(2)
+    """
+
+    # Computational basis states
     ket0 = basis(2, 0)
     ket1 = basis(2, 1)
+
+    # Diagonal basis states
     ket_plus  = (ket0 + ket1).unit()
     ket_minus = (ket0 - ket1).unit()
 
-    # map (basis, bit) -> ket
+    # Mapping: (basis_id, bit) -> ket
     state = {
-        (0, 0): ket0,
-        (0, 1): ket1,
-        (1, 0): ket_plus,
-        (1, 1): ket_minus,
+        (RECTILINEAR, 0): ket0,
+        (RECTILINEAR, 1): ket1,
+        (DIAGONAL,    0): ket_plus,
+        (DIAGONAL,    1): ket_minus,
     }
 
-    # projectors for measurement in each basis: [P(bit=0), P(bit=1)]
+    # Projective measurement operators for each basis: [P(bit=0), P(bit=1)]
     proj = {
-        0: [ket0 * ket0.dag(), ket1 * ket1.dag()],
-        1: [ket_plus * ket_plus.dag(), ket_minus * ket_minus.dag()],
+        RECTILINEAR: [ket0 * ket0.dag(), ket1 * ket1.dag()],
+        DIAGONAL:    [ket_plus * ket_plus.dag(), ket_minus * ket_minus.dag()],
     }
 
-    # identity Matrix
+    # 2x2 identity operator
     I2 = qeye(2)
 
-### Prepare the density matrix for a given basis and bit choosen by Alice
-def prepare_density_matrix(basis_id: int, bit: int):
+
+def prepare_density_matrix(basis_id: int, bit: int) -> Qobj:
+    """
+    Prepare the density matrix corresponding to Alice's choice of
+    basis and bit in the BB84 protocol.
+    """
     psi = BB84States.state[(basis_id, bit)]
     return ket2dm(psi)
