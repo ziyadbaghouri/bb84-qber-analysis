@@ -31,13 +31,12 @@ def main() -> None:
     cfg = SweepConfig(
         n=args.n,
         seed=args.seed,
-        noise_model=args.noise_model,
         p_noise_values=p_grid,
         q_eve_values=q_grid,
     )
 
     results_dir = Path("results")
-    csv_path = results_dir / f"sweep_{cfg.noise_model}_n{cfg.n}_seed{cfg.seed}.csv"
+    csv_path = results_dir / f"sweep_n{cfg.n}_seed{cfg.seed}.csv"
 
     # 1) run sweep -> CSV
     df = run_sweep_parallel(cfg)
@@ -45,7 +44,7 @@ def main() -> None:
     print(f"[OK] Saved sweep CSV: {csv_path}")
 
     # 2) plots
-    plots_dir = results_dir / "plots" / f"{cfg.noise_model}_n{cfg.n}_seed{cfg.seed}"
+    plots_dir = results_dir / "plots" / f"n{cfg.n}_seed{cfg.seed}"
     plot_qber_heatmap(df, plots_dir / "qber_heatmap.png")
     plot_qber_vs_qeve_for_fixed_p(df, args.p_curve, plots_dir / f"qber_vs_qeve_p{args.p_curve}.png")
     plot_qber_vs_pnoise_for_fixed_q(df, args.q_curve, plots_dir / f"qber_vs_pnoise_q{args.q_curve}.png")
