@@ -8,5 +8,10 @@ This project investigates how channel noise and eavesdropping affect the Quantum
 - Measure and visualize QBER as a function of noise probability *p* and attack rate *q*.
 - Highlight the security threshold region.
 
+
+## Overleaf Project
+[Pdf link](https://www.overleaf.com/read/cfxtmgwkmdgs#aaf1a1)
+
+
 ## Repo structure
 
