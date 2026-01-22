@@ -12,6 +12,10 @@ This project investigates how channel noise and eavesdropping affect the Quantum
 ## Overleaf Project
 [Pdf link](https://www.overleaf.com/read/cfxtmgwkmdgs#aaf1a1)
 
+## Slides
+[Slides link](https://docs.google.com/presentation/d/1ZU-iSBj3BBCttrr5j_xjis_L9iTyg6mJGHdSWEqeoHA/edit?usp=sharing)
+
+
 
 ## Repo structure
 
