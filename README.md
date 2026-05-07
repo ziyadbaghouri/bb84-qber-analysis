@@ -1,4 +1,4 @@
-# BB84 QKD — Noise & QBER Monte Carlo Simulation
+# bb84-qber-analysis
 
 A rigorous, research-grade Monte Carlo simulation of the **BB84 Quantum Key Distribution protocol** that sweeps channel noise and eavesdropping probability across a full 2-D parameter space and compares results against the Shor–Preskill information-theoretic security bound.
 
@@ -166,7 +166,7 @@ The simulation matches the theoretical boundary to within one grid step (Δq = 0
 ## Code Architecture
 
 ```
-qkd-noise-qber-bb84/
+bb84-qber-analysis/
 ├── src/
 │   ├── bb84_simulation.py   # Core Monte Carlo engine
 │   ├── run_sweep.py         # Parallel 2-D parameter sweep → CSV
@@ -185,8 +185,6 @@ qkd-noise-qber-bb84/
 │       ├── qber_vs_qeve_p0.02.png
 │       └── qber_vs_pnoise_q0.25.png
 │
-├── report/
-│   └── report.tex           # Full LaTeX technical report
 ├── requirements.txt
 └── README.md
 ```
@@ -209,8 +207,8 @@ qkd-noise-qber-bb84/
 ## Installation
 
 ```bash
-git clone https://github.com/ziyadbagh/qkd-noise-qber-bb84.git
-cd qkd-noise-qber-bb84
+git clone https://github.com/ziyadbagh/bb84-qber-analysis.git
+cd bb84-qber-analysis
 pip install -r requirements.txt
 ```
 
