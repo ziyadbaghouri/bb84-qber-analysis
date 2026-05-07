@@ -1,27 +1,37 @@
+"""
+BB84 Monte Carlo Simulation with Theoretical QBER Threshold
+
+This file:
+1) Simulates the BB84 protocol with noise and intercept–resend eavesdropping
+2) Computes the observed QBER from Monte Carlo trials
+3) Computes the maximum tolerable QBER using the Shor–Preskill security bound
+4) Compares simulation results to the proven security threshold
+"""
+
 from dataclasses import dataclass
-from typing import Literal, Optional
+from typing import Optional
 import numpy as np
 
-from src.states import prepare_density_matrix
-from src.measurement import measure_in_basis
-from src.eve import intercept_resend
-from src.noise_models import apply_depolarizing_channel
-from src.qber_analysis import sift_keys, qber as qber_fn
+# =========================
+# PARAMETERS & DATA MODELS
+# =========================
 
-
-
-# Respesent BB84 simulation parameters 
 @dataclass(frozen=True)
 class BB84Params:
-    n: int = 50_000
-    p_noise: float = 0.0
-    q_eve: float = 0.0
-    seed: Optional[int] = 0
+    """
+    BB84 simulation parameters
+    """
+    n: int = 50_000              # number of photons
+    p_noise: float = 0.0         # channel noise probability
+    q_eve: float = 0.0           # Eve interception probability
+    seed: Optional[int] = 0      # RNG seed
 
 
-# Repreent BB84 simulation results
 @dataclass
 class BB84Result:
+    """
+    BB84 simulation results
+    """
     qber: float
     n_total: int
     n_sifted: int
@@ -29,8 +39,62 @@ class BB84Result:
     params: BB84Params
 
 
+# =========================
+# INFORMATION-THEORETIC PART
+# =========================
+
+def binary_entropy(q):
+    """
+    Binary entropy function h2(q), vectorized.
+    Works for scalars or NumPy arrays.
+    """
+    q = np.asarray(q)
+
+    h = np.zeros_like(q, dtype=float)
+    mask = (q > 0.0) & (q < 1.0)
+
+    h[mask] = (
+        -q[mask] * np.log2(q[mask])
+        - (1 - q[mask]) * np.log2(1 - q[mask])
+    )
+
+    return h
+
+
+
+def bb84_key_rate(qber: float) -> float:
+    """
+    Asymptotic BB84 secret key rate (Shor–Preskill bound):
+
+        K(Q) = 1 - 2 h2(Q)
+
+    Secure key extraction requires K(Q) > 0
+    """
+    return 1.0 - 2.0 * binary_entropy(qber)
+
+
+def compute_qber_threshold() -> float:
+    """
+    Compute the maximum tolerable QBER by solving:
+
+        1 - 2 h2(Q) = 0
+    """
+    q_vals = np.linspace(0.0, 0.5, 1_000_000)
+    rates = bb84_key_rate(q_vals)
+    idx = np.where(rates <= 0)[0][0]
+    return q_vals[idx]
+
+
+# =========================
+# BB84 SIMULATION CORE
+# =========================
+
 def run_bb84(params: BB84Params) -> BB84Result:
-    # validate inputs
+    """
+    Monte Carlo simulation of BB84
+    """
+
+    # ---- Input validation ----
     if params.n <= 0:
         raise ValueError("n must be positive")
     if not (0.0 <= params.p_noise <= 1.0):
@@ -41,38 +105,93 @@ def run_bb84(params: BB84Params) -> BB84Result:
     rng = np.random.default_rng(params.seed)
     N = params.n
 
-    # Alice + Bob choices
-    alice_bits  = rng.integers(0, 2, size=N, dtype=np.int8)
-    alice_bases = rng.integers(0, 2, size=N, dtype=np.int8)
-    bob_bases   = rng.integers(0, 2, size=N, dtype=np.int8)
+    # ---- Random choices ----
+    alice_bits  = rng.integers(0, 2, size=N)
+    alice_bases = rng.integers(0, 2, size=N)
+    bob_bases   = rng.integers(0, 2, size=N)
 
-    # No bits for Bob yet
-    bob_bits = np.empty(N, dtype=np.int8)
+    bob_bits = np.empty(N, dtype=int)
 
-    # run each BB84 round
+    # ---- Main BB84 loop ----
     for i in range(N):
-        # Alice prepares rho
-        rho = prepare_density_matrix(int(alice_bases[i]), int(alice_bits[i]))
 
-        # Eve intercepts with probability q_eve
+        # Alice prepares a bit
+        a_bit = alice_bits[i]
+        a_basis = alice_bases[i]
+
+        # Bob measures
         if rng.random() < params.q_eve:
-            rho = intercept_resend(rho, rng)
+            # Eve intercept–resend
+            eve_basis = rng.integers(0, 2)
+            eve_bit = a_bit if eve_basis == a_basis else rng.integers(0, 2)
+            sent_bit = eve_bit
+        else:
+            sent_bit = a_bit
 
         # Channel noise
-        rho = apply_depolarizing_channel(rho, params.p_noise)
+        if rng.random() < params.p_noise:
+            sent_bit = rng.integers(0, 2)
 
-        # Bob measures in his chosen basis
-        bob_bits[i] = measure_in_basis(rho, int(bob_bases[i]), rng)
+        # Bob measurement
+        if bob_bases[i] == a_basis:
+            bob_bits[i] = sent_bit
+        else:
+            bob_bits[i] = rng.integers(0, 2)
 
-    # sifting + QBER
-    a_sift, b_sift = sift_keys(alice_bits, bob_bits, alice_bases, bob_bases)
-    q = qber_fn(a_sift, b_sift)
-    n_err = int(np.sum(a_sift != b_sift)) if a_sift.size else 0
+    # ---- Basis reconciliation (sifting) ----
+    keep = alice_bases == bob_bases
+    a_sift = alice_bits[keep]
+    b_sift = bob_bits[keep]
+
+    # ---- QBER computation ----
+    if a_sift.size == 0:
+        qber = 0.0
+        n_err = 0
+    else:
+        n_err = np.sum(a_sift != b_sift)
+        qber = n_err / a_sift.size
 
     return BB84Result(
-        qber=q,
+        qber=qber,
         n_total=N,
         n_sifted=int(a_sift.size),
-        n_errors=n_err,
+        n_errors=int(n_err),
         params=params
     )
+
+
+# =========================
+# MAIN ENTRY POINT
+# =========================
+
+if __name__ == "__main__":
+
+    # --- Simulation parameters ---
+    params = BB84Params(
+        n=50_000,
+        p_noise=0.02,
+        q_eve=0.20,
+        seed=42
+    )
+
+    # --- Run simulation ---
+    result = run_bb84(params)
+
+    # --- Compute theoretical threshold ---
+    qber_threshold = compute_qber_threshold()
+
+    # --- Display results ---
+    print("=== BB84 Monte Carlo Simulation ===")
+    print(f"Total photons:     {result.n_total}")
+    print(f"Sifted key size:   {result.n_sifted}")
+    print(f"Errors observed:   {result.n_errors}")
+    print(f"Observed QBER:     {result.qber:.4f} ({result.qber*100:.2f}%)")
+    print()
+    print("=== Security Threshold (Shor–Preskill) ===")
+    print(f"Maximum QBER:      {qber_threshold:.4f} ({qber_threshold*100:.2f}%)")
+    print()
+
+    if result.qber <= qber_threshold:
+        print("✔ Secure regime: secret key extraction is possible.")
+    else:
+        print("✘ Insecure regime: protocol must abort.")

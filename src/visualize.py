@@ -1,70 +1,145 @@
+"""
+Visualization of BB84 Monte Carlo Results
+
+This script produces:
+1) A continuous QBER phase diagram (smooth / faded colors)
+2) A binary security decision plot (SECURE vs ABORT)
+"""
+
 from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 
-# Convert long-form dataframe into grid arrays for plotting
-def _pivot_qber(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    p_values = np.sort(df["p_noise"].unique())
-    q_values = np.sort(df["q_eve"].unique())
+# =========================
+# LOAD RESULTS
+# =========================
 
-    grid = df.pivot(index="q_eve", columns="p_noise", values="qber")
-    Z = grid.to_numpy()  # rows correspond to q_values, cols to p_values
-    return p_values, q_values, Z
+RESULTS_PATH = Path("results/bb84_qber_sweep.csv")
 
-# Heatmap of QBER over (p_noise, q_eve)
-def plot_qber_heatmap(df: pd.DataFrame, out_path: Path) -> None:
-    p_values, q_values, Z = _pivot_qber(df)
-    fig, ax = plt.subplots()
-    im = ax.imshow(
-        Z,
-        origin="lower",
-        aspect="auto",
-        extent=[p_values.min(), p_values.max(), q_values.min(), q_values.max()],
+if not RESULTS_PATH.exists():
+    raise FileNotFoundError(f"Results file not found: {RESULTS_PATH}")
+
+df = pd.read_csv(RESULTS_PATH)
+
+QBER_THRESHOLD = df["qber_threshold"].iloc[0]
+
+
+# =========================
+# THEORETICAL BOUNDARY
+# =========================
+
+def theoretical_boundary(p_vals: np.ndarray) -> np.ndarray:
+    """
+    Exact security boundary from QBER = p/2 + (q/4)(1-p) = Q*:
+        q_eve = 4(Q* - p/2) / (1 - p)
+
+    Returns NaN where p >= 1 (undefined).
+    """
+    with np.errstate(invalid="ignore", divide="ignore"):
+        q = 4.0 * (QBER_THRESHOLD - p_vals / 2.0) / (1.0 - p_vals)
+    return np.where(p_vals < 1.0, q, np.nan)
+
+
+# =========================
+# FIGURE 1: CONTINUOUS QBER
+# =========================
+
+def plot_qber_continuous(df: pd.DataFrame) -> None:
+    plt.figure(figsize=(7, 5))
+
+    sc = plt.scatter(
+        df["p_noise"],
+        df["q_eve"],
+        c=df["qber"],
+        cmap="viridis",
+        s=80,
+        edgecolors="k"
     )
-    cbar = fig.colorbar(im, ax=ax)
-    cbar.set_label("QBER")
-    ax.set_xlabel("p_noise")
-    ax.set_ylabel("q_eve")
-    title = f"QBER heatmap"
-    ax.set_title(title)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=200, bbox_inches="tight")
-    plt.close(fig)
 
-# Plot QBER vs q_eve for a chosen p_noise value
-def plot_qber_vs_qeve_for_fixed_p(df: pd.DataFrame, p_noise: float, out_path: Path) -> None:
-    # choose closest p_noise available
-    p_vals = np.sort(df["p_noise"].unique())
-    p_sel = float(p_vals[np.argmin(np.abs(p_vals - p_noise))])
-    sub = df[df["p_noise"] == p_sel].sort_values("q_eve")
-    x = sub["q_eve"].to_numpy()
-    y = sub["qber"].to_numpy()
-    fig, ax = plt.subplots()
-    ax.plot(x, y, marker="o")
-    ax.set_xlabel("q_eve")
-    ax.set_ylabel("QBER")
-    ax.set_title(f"QBER vs q_eve at p_noise={p_sel}")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=200, bbox_inches="tight")
-    plt.close(fig)
+    # Theoretical boundary
+    p_vals = np.linspace(df["p_noise"].min(), df["p_noise"].max(), 300)
+    q_bound = theoretical_boundary(p_vals)
+    mask = q_bound >= 0
 
-# Plot QBER vs p_noise for a chosen q_eve value
-def plot_qber_vs_pnoise_for_fixed_q(df: pd.DataFrame, q_eve: float, out_path: Path) -> None:
-    q_vals = np.sort(df["q_eve"].unique())
-    q_sel = float(q_vals[np.argmin(np.abs(q_vals - q_eve))])
-    sub = df[df["q_eve"] == q_sel].sort_values("p_noise")
-    x = sub["p_noise"].to_numpy()
-    y = sub["qber"].to_numpy()
-    fig, ax = plt.subplots()
-    ax.plot(x, y, marker="o")
-    ax.set_xlabel("p_noise")
-    ax.set_ylabel("QBER")
-    ax.set_title(f"QBER vs p_noise at q_eve={q_sel}")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=200, bbox_inches="tight")
-    plt.close(fig)
+    plt.plot(
+        p_vals[mask],
+        q_bound[mask],
+        "r--",
+        linewidth=2,
+        label="Theoretical threshold"
+    )
 
-def load_csv(path: Path) -> pd.DataFrame:
-    return pd.read_csv(path)
+    plt.xlabel("Channel noise probability $p_{noise}$")
+    plt.ylabel("Eavesdropping probability $q_{eve}$")
+    plt.title("Observed QBER (Monte Carlo Simulation)")
+    plt.grid(True)
+
+    cbar = plt.colorbar(sc)
+    cbar.set_label("Observed QBER")
+
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+# =========================
+# FIGURE 2: BINARY DECISION
+# =========================
+
+def plot_security_binary(df: pd.DataFrame) -> None:
+    plt.figure(figsize=(7, 5))
+
+    secure_num = df["secure"].astype(int)
+
+    sc = plt.scatter(
+        df["p_noise"],
+        df["q_eve"],
+        c=secure_num,
+        cmap="coolwarm",
+        s=80,
+        edgecolors="k"
+    )
+
+    # Theoretical boundary
+    p_vals = np.linspace(df["p_noise"].min(), df["p_noise"].max(), 300)
+    q_bound = theoretical_boundary(p_vals)
+    mask = q_bound >= 0
+
+    plt.plot(
+        p_vals[mask],
+        q_bound[mask],
+        "k--",
+        linewidth=2,
+        label="Theoretical threshold"
+    )
+
+    plt.xlabel("Channel noise probability $p_{noise}$")
+    plt.ylabel("Eavesdropping probability $q_{eve}$")
+    plt.title("BB84 Security Regions (Secure vs Abort)")
+    plt.grid(True)
+
+    cbar = plt.colorbar(sc)
+    cbar.set_label("Secure (1) / Abort (0)")
+
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
+# =========================
+# MAIN
+# =========================
+
+if __name__ == "__main__":
+
+    print("Loaded BB84 sweep results")
+    print(f"Points: {len(df)}")
+    print(f"QBER threshold: {QBER_THRESHOLD:.4f} ({QBER_THRESHOLD*100:.2f}%)")
+
+    # Main result: smooth QBER behavior
+    plot_qber_continuous(df)
+
+    # Decision view (useful for explanation)
+    plot_security_binary(df)
